@@ -1,214 +1,188 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-
-cd "${REPO_ROOT}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+VENV_DIR=".venv"
+REQUIREMENTS_FILE="requirements.txt"
+REQUIRED_FILES=("pyproject.toml" ".pre-commit-config.yaml" "Makefile" "${REQUIREMENTS_FILE}")
+REQUIRED_DEV_TOOLS=("pre-commit" "ruff" "pytest" "mypy" "pip-audit")
 
 FAST_SETUP="${FAST_SETUP:-0}"
 SETUP_STRICT="${SETUP_STRICT:-0}"
 AUTOUPDATE_HOOKS="${AUTOUPDATE_HOOKS:-0}"
 INSTALL_EDITABLE="${INSTALL_EDITABLE:-0}"
 
+cd "${REPO_ROOT}"
+
 usage() {
-    cat <<'EOF'
+  cat <<'EOF'
 Usage: bash .devcontainer/setup.sh [options]
 
 Options:
-  --fast               Skip validation steps (same as FAST_SETUP=1)
-  --strict             Stop on validation/install failure (same as SETUP_STRICT=1)
-  --autoupdate-hooks   Run pre-commit autoupdate after hook install
-  --editable           Install project as editable package
+  --fast               Skip validation steps (FAST_SETUP=1)
+  --strict             Stop on validation/install failure (SETUP_STRICT=1)
+  --autoupdate-hooks   Run pre-commit autoupdate
+  --editable           Also install project as editable package
   -h, --help           Show this help message
 EOF
 }
 
-parse_args() {
-    while [ "$#" -gt 0 ]; do
-        case "$1" in
-            --fast)
-                FAST_SETUP=1
-                ;;
-            --strict)
-                SETUP_STRICT=1
-                ;;
-            --autoupdate-hooks)
-                AUTOUPDATE_HOOKS=1
-                ;;
-            --editable)
-                INSTALL_EDITABLE=1
-                ;;
-            -h|--help)
-                usage
-                exit 0
-                ;;
-            *)
-                printf '[ERROR] Unknown option: %s\n' "$1" >&2
-                usage
-                exit 1
-                ;;
-        esac
-        shift
-    done
-}
-
 log() {
-    local level="$1"
-    shift
-    printf '[%s] %s\n' "${level}" "$*"
+  local level="$1"
+  shift
+  printf '[%s] %s\n' "${level}" "$*"
 }
 
-run_step() {
-    local description="$1"
-    shift
-
-    if "$@"; then
-        return 0
-    fi
-
-    if [ "${SETUP_STRICT}" = "1" ]; then
-        log ERROR "${description} failed."
-        exit 1
-    fi
-
-    log WARNING "${description} failed. Continuing because SETUP_STRICT=0."
-    return 1
+die() {
+  log ERROR "$*"
+  exit 1
 }
 
-require_canonical_files() {
-    local file
-    local missing=()
-    local required=(
-        "pyproject.toml"
-        ".pre-commit-config.yaml"
-        "Makefile"
-        ".github/CODEOWNERS"
-        ".github/dependabot.yml"
-    )
+is_on() {
+  [ "$1" = "1" ]
+}
 
-    for file in "${required[@]}"; do
-        if [ ! -f "${file}" ]; then
-            missing+=("${file}")
-        fi
-    done
+parse_args() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --fast) FAST_SETUP=1 ;;
+      --strict) SETUP_STRICT=1 ;;
+      --autoupdate-hooks) AUTOUPDATE_HOOKS=1 ;;
+      --editable) INSTALL_EDITABLE=1 ;;
+      -h|--help) usage; exit 0 ;;
+      *) die "Unknown option: $1" ;;
+    esac
+    shift
+  done
+}
 
-    if [ "${#missing[@]}" -eq 0 ]; then
-        return
+require_tools() {
+  local cmd
+  for cmd in python git; do
+    command -v "${cmd}" >/dev/null 2>&1 || die "${cmd} command is required."
+  done
+}
+
+check_required_files() {
+  local file
+  local missing=0
+  for file in "${REQUIRED_FILES[@]}"; do
+    if [ ! -f "${file}" ]; then
+      log ERROR "Missing file: ${file}"
+      missing=1
     fi
+  done
+  [ "${missing}" -eq 0 ] || die "Required files are missing."
+}
 
-    log ERROR "Missing required repository files:"
-    for file in "${missing[@]}"; do
-        log ERROR "  - ${file}"
-    done
-    log ERROR "Commit baseline files to the repository."
-    exit 1
+run_or_warn() {
+  local title="$1"
+  shift
+  if "$@"; then
+    return 0
+  fi
+  if is_on "${SETUP_STRICT}"; then
+    die "${title} failed."
+  fi
+  log WARNING "${title} failed (SETUP_STRICT=0)."
+  return 1
+}
+
+pip_install() {
+  python -m pip install "$@"
+}
+
+has_matching_files() {
+  find . -path "./${VENV_DIR}" -prune -o -type f "$@" -print -quit | grep -q .
 }
 
 setup_venv() {
-    if [ ! -d .venv ]; then
-        log INFO "Creating virtual environment at .venv"
-        python -m venv .venv
-    else
-        log INFO "Using existing .venv"
-    fi
-
-    # shellcheck disable=SC1091
-    source .venv/bin/activate
+  if [ -d "${VENV_DIR}" ]; then
+    log INFO "Using existing ${VENV_DIR}"
+  else
+    log INFO "Creating virtual environment at ${VENV_DIR}"
+    python -m venv "${VENV_DIR}"
+  fi
+  # shellcheck disable=SC1091
+  source "${VENV_DIR}/bin/activate"
 }
 
-install_minimal_tooling() {
-    run_step "Installing core dev tooling" \
-        python -m pip install -U pre-commit ruff pytest mypy pip-audit || true
+verify_required_dev_tools() {
+  local tool
+  local missing=0
+  for tool in "${REQUIRED_DEV_TOOLS[@]}"; do
+    if [ ! -x "${VENV_DIR}/bin/${tool}" ]; then
+      log ERROR "Missing ${tool} in ${VENV_DIR}. Add it to ${REQUIREMENTS_FILE}."
+      missing=1
+    fi
+  done
+  [ "${missing}" -eq 0 ]
 }
 
 install_dependencies() {
-    log INFO "Installing base tooling"
-    python -m pip install -U pip setuptools wheel
+  log INFO "Installing base tooling"
+  python -m pip install -U pip setuptools wheel
 
-    if [ "${INSTALL_EDITABLE}" = "1" ]; then
-        log INFO "Installing project with dev dependencies (editable mode)"
-        if run_step "pip install -e .[dev]" python -m pip install -e '.[dev]'; then
-            return
-        fi
-    else
-        log INFO "Installing project dev dependencies (non-editable mode)"
-        if run_step "pip install .[dev]" python -m pip install '.[dev]'; then
-            return
-        fi
-    fi
+  run_or_warn "pip install -r ${REQUIREMENTS_FILE}" pip_install -r "${REQUIREMENTS_FILE}"
 
-    log WARNING "Project dependency install failed. Installing minimal toolchain."
-    install_minimal_tooling
+  if is_on "${INSTALL_EDITABLE}"; then
+    run_or_warn "pip install -e ." pip_install -e .
+  fi
+
+  run_or_warn "Verify required dev tools" verify_required_dev_tools
 }
 
 install_hooks() {
-    if [ ! -d .git ]; then
-        log WARNING "No .git directory found. Skipping hook installation."
-        return
-    fi
+  if [ ! -d .git ]; then
+    log WARNING "No .git directory found. Skipping hook installation."
+    return
+  fi
 
-    log INFO "Installing pre-commit hooks"
-    run_step "pre-commit install" pre-commit install --install-hooks || true
+  run_or_warn "pre-commit install" \
+    pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push || true
 
-    if [ "${AUTOUPDATE_HOOKS}" = "1" ]; then
-        log INFO "Updating pre-commit hook versions"
-        run_step "pre-commit autoupdate" pre-commit autoupdate || true
-    fi
-}
-
-has_python_sources() {
-    find . -path './.venv' -prune -o -type f -name '*.py' -print -quit | grep -q .
-}
-
-has_python_tests() {
-    find . -path './.venv' -prune -o -type f \( -name 'test_*.py' -o -name '*_test.py' \) -print -quit | grep -q .
+  if is_on "${AUTOUPDATE_HOOKS}"; then
+    run_or_warn "pre-commit autoupdate" pre-commit autoupdate || true
+  fi
 }
 
 run_validation() {
-    if [ "${FAST_SETUP}" = "1" ]; then
-        log INFO "FAST_SETUP=1, skipping validation steps."
-        return
-    fi
+  if is_on "${FAST_SETUP}"; then
+    log INFO "FAST_SETUP=1, skipping validation."
+    return
+  fi
 
-    log INFO "Running local validation"
-    if ! pre-commit run --all-files; then
-        log INFO "Re-running pre-commit after applying autofixes"
-        run_step "pre-commit run --all-files (second pass)" pre-commit run --all-files || true
-    fi
+  log INFO "Running local validation"
+  if ! pre-commit run --all-files; then
+    log INFO "Retrying pre-commit after autofixes"
+    run_or_warn "pre-commit run --all-files (second pass)" pre-commit run --all-files || true
+  fi
 
-    run_step "ruff check" python -m ruff check --no-cache . || true
+  run_or_warn "ruff check" python -m ruff check --no-cache . || true
 
-    if has_python_sources; then
-        run_step "mypy" python -m mypy . || true
-    else
-        log INFO "No Python source files found. Skipping mypy."
-    fi
+  if has_matching_files -name '*.py'; then
+    run_or_warn "mypy" python -m mypy . || true
+  else
+    log INFO "No Python source files found. Skipping mypy."
+  fi
 
-    if has_python_tests; then
-        run_step "pytest" python -m pytest -q || true
-    else
-        log INFO "No tests found. Skipping pytest."
-    fi
+  if has_matching_files \( -name 'test_*.py' -o -name '*_test.py' \); then
+    run_or_warn "pytest" python -m pytest -q || true
+  else
+    log INFO "No tests found. Skipping pytest."
+  fi
 }
 
 main() {
-    parse_args "$@"
-    command -v python >/dev/null 2>&1 || {
-        log ERROR "python command is required."
-        exit 1
-    }
-    command -v git >/dev/null 2>&1 || {
-        log ERROR "git command is required."
-        exit 1
-    }
-
-    require_canonical_files
-    setup_venv
-    install_dependencies
-    install_hooks
-    run_validation
-    log INFO "Development environment setup completed."
+  parse_args "$@"
+  require_tools
+  check_required_files
+  setup_venv
+  install_dependencies
+  install_hooks
+  run_validation
+  log INFO "Setup complete."
 }
 
 main "$@"

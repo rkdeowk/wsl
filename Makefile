@@ -1,54 +1,74 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-PYTHON := .venv/bin/python
-PRE_COMMIT := .venv/bin/pre-commit
-PIP_AUDIT := .venv/bin/pip-audit
+VENV_BIN := .venv/bin
+PYTHON := $(VENV_BIN)/python
+PRE_COMMIT := $(VENV_BIN)/pre-commit
+PIP_AUDIT := $(VENV_BIN)/pip-audit
 
-.PHONY: help init install-hooks fmt lint test check update-hooks audit
+RUFF := $(PYTHON) -m ruff
+MYPY := $(PYTHON) -m mypy
+PYTEST := $(PYTHON) -m pytest
+
+FIND_FIRST_PYTHON_SOURCE := find . -path './.venv' -prune -o -type f -name '*.py' -print -quit
+FIND_FIRST_PYTHON_TEST := find . -path './.venv' -prune -o -type f \( -name 'test_*.py' -o -name '*_test.py' \) -print -quit
+
+.PHONY: help init install-hooks fix fmt lint test hooks verify check update-hooks audit
 
 help:
 	@echo "Targets:"
-	@echo "  init          Bootstrap local dev environment"
+	@echo "  init          Setup local env"
 	@echo "  install-hooks Install git hooks"
-	@echo "  fmt           Run formatters and autofixes"
-	@echo "  lint          Run static analysis"
-	@echo "  test          Run tests when present"
-	@echo "  check         Run full local quality gate"
-	@echo "  update-hooks  Update pre-commit hook revisions"
-	@echo "  audit         Scan dependencies for vulnerabilities"
+	@echo "  fix           Auto-fix and format"
+	@echo "  fmt           Alias of fix"
+	@echo "  lint          Ruff + mypy"
+	@echo "  test          Pytest if tests exist"
+	@echo "  hooks         Run pre-commit(all)"
+	@echo "  verify        Read-only checks"
+	@echo "  check         Full gate (fix+hooks+verify)"
+	@echo "  update-hooks  Update hook versions"
+	@echo "  audit         Dependency scan"
 
 init:
-	bash .devcontainer/setup.sh
+	bash .devcontainer/setup.sh --strict
 
 install-hooks:
 	@if [ ! -x "$(PRE_COMMIT)" ]; then \
 		echo "[ERROR] pre-commit is not installed. Run 'make init' first."; \
 		exit 1; \
 	fi
-	$(PRE_COMMIT) install --install-hooks
+	$(PRE_COMMIT) install --install-hooks --hook-type pre-commit --hook-type pre-push
 
-fmt:
-	$(PYTHON) -m ruff check --fix --no-cache .
-	$(PYTHON) -m ruff format --no-cache .
+fix:
+	$(RUFF) check --fix --no-cache .
+	$(RUFF) format --no-cache .
+
+fmt: fix
 
 lint:
-	$(PYTHON) -m ruff check --no-cache .
-	@if find . -path './.venv' -prune -o -type f -name '*.py' -print | grep -q .; then \
-		$(PYTHON) -m mypy .; \
+	$(RUFF) check --no-cache .
+	@if $(FIND_FIRST_PYTHON_SOURCE) | grep -q .; then \
+		$(MYPY) .; \
 	else \
 		echo "[INFO] No Python source files found. Skipping mypy."; \
 	fi
 
 test:
-	@if find . -path './.venv' -prune -o -type f \( -name 'test_*.py' -o -name '*_test.py' \) -print | grep -q .; then \
-		$(PYTHON) -m pytest -q; \
+	@if $(FIND_FIRST_PYTHON_TEST) | grep -q .; then \
+		$(PYTEST) -q; \
 	else \
 		echo "[INFO] No tests found. Skipping pytest."; \
 	fi
 
-check: fmt lint test
+hooks:
 	$(PRE_COMMIT) run --all-files
+
+verify: lint test
+
+check:
+	@$(MAKE) fix
+	@$(MAKE) hooks
+	@$(MAKE) verify
 
 update-hooks:
 	$(PRE_COMMIT) autoupdate

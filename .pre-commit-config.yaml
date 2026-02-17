@@ -1,3 +1,5 @@
+default_stages: [pre-commit]
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -11,6 +13,7 @@ repos:
       - id: check-merge-conflict
       - id: debug-statements
       - id: detect-private-key
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.1
     hooks:
@@ -18,3 +21,13 @@ repos:
         args: [--fix, --no-cache]
       - id: ruff-format
         args: [--no-cache]
+
+  - repo: local
+    hooks:
+      - id: make-verify
+        name: make verify
+        entry: make verify
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
