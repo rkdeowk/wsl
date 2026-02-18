@@ -1,77 +1,60 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
+SETUP_SCRIPT := .devcontainer/setup.sh
+SMOKE_SCRIPT := .devcontainer/tests/smoke.sh
 VENV_BIN := .venv/bin
 PYTHON := $(VENV_BIN)/python
-PRE_COMMIT := $(VENV_BIN)/pre-commit
 PIP_AUDIT := $(VENV_BIN)/pip-audit
 
 RUFF := $(PYTHON) -m ruff
-MYPY := $(PYTHON) -m mypy
-PYTEST := $(PYTHON) -m pytest
 
-FIND_FIRST_PYTHON_SOURCE := find . -path './.venv' -prune -o -type f -name '*.py' -print -quit
-FIND_FIRST_PYTHON_TEST := find . -path './.venv' -prune -o -type f \( -name 'test_*.py' -o -name '*_test.py' \) -print -quit
+define require_executable
+	@if [ ! -x "$(1)" ]; then \
+		echo "[ERROR] Missing $(1). Run 'make bootstrap'."; \
+		exit 1; \
+	fi
+endef
 
-.PHONY: help init install-hooks fix fmt lint test hooks verify check update-hooks audit
+.PHONY: help bootstrap doctor reset fix verify check audit smoke
 
 help:
 	@echo "Targets:"
-	@echo "  init          Setup local env"
-	@echo "  install-hooks Install git hooks"
+	@echo "  bootstrap     One-shot onboarding setup"
+	@echo "  doctor        Diagnose local setup"
+	@echo "  reset         Recreate local env from scratch"
 	@echo "  fix           Auto-fix and format"
-	@echo "  fmt           Alias of fix"
-	@echo "  lint          Ruff + mypy"
-	@echo "  test          Pytest if tests exist"
-	@echo "  hooks         Run pre-commit(all)"
 	@echo "  verify        Read-only checks"
-	@echo "  check         Full gate (fix+hooks+verify)"
-	@echo "  update-hooks  Update hook versions"
+	@echo "  check         Full gate (fix+verify)"
 	@echo "  audit         Dependency scan"
+	@echo "  smoke         Run setup smoke tests"
 
-init:
-	bash .devcontainer/setup.sh --strict
+bootstrap:
+	bash $(SETUP_SCRIPT) setup --strict
 
-install-hooks:
-	@if [ ! -x "$(PRE_COMMIT)" ]; then \
-		echo "[ERROR] pre-commit is not installed. Run 'make init' first."; \
-		exit 1; \
-	fi
-	$(PRE_COMMIT) install --install-hooks --hook-type pre-commit --hook-type pre-push
+doctor:
+	bash $(SETUP_SCRIPT) doctor --strict
+
+reset:
+	rm -rf .venv .mypy_cache .pytest_cache .ruff_cache
+	@$(MAKE) bootstrap
 
 fix:
+	$(call require_executable,$(PYTHON))
 	$(RUFF) check --fix --no-cache .
 	$(RUFF) format --no-cache .
 
-fmt: fix
-
-lint:
-	$(RUFF) check --no-cache .
-	@if $(FIND_FIRST_PYTHON_SOURCE) | grep -q .; then \
-		$(MYPY) .; \
-	else \
-		echo "[INFO] No Python source files found. Skipping mypy."; \
-	fi
-
-test:
-	@if $(FIND_FIRST_PYTHON_TEST) | grep -q .; then \
-		$(PYTEST) -q; \
-	else \
-		echo "[INFO] No tests found. Skipping pytest."; \
-	fi
-
-hooks:
-	$(PRE_COMMIT) run --all-files
-
-verify: lint test
+verify:
+	bash $(SETUP_SCRIPT) verify --strict
 
 check:
 	@$(MAKE) fix
-	@$(MAKE) hooks
 	@$(MAKE) verify
 
-update-hooks:
-	$(PRE_COMMIT) autoupdate
-
 audit:
+	$(call require_executable,$(PYTHON))
+	$(call require_executable,$(PIP_AUDIT))
 	$(PIP_AUDIT)
+
+smoke:
+	bash $(SMOKE_SCRIPT)

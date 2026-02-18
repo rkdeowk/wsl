@@ -1,6 +1,6 @@
 {
   "name": "python-devcontainer",
-  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12@sha256:1cf7fa69f61af84823cac251fc50d699db5948c399316e08cd88468bec5121e6",
   "remoteUser": "vscode",
   "features": {
     "ghcr.io/devcontainers/features/git:1": {},
@@ -21,5 +21,5 @@
       }
     }
   },
-  "postCreateCommand": "bash .devcontainer/setup.sh --strict"
+  "postCreateCommand": "bash .devcontainer/setup.sh setup --strict"
 }
