@@ -6,6 +6,7 @@ SMOKE_SCRIPT := .devcontainer/tests/smoke.sh
 VENV_BIN := .venv/bin
 PYTHON := $(VENV_BIN)/python
 PIP_AUDIT := $(VENV_BIN)/pip-audit
+SETUP := bash $(SETUP_SCRIPT)
 
 RUFF := $(PYTHON) -m ruff
 
@@ -16,24 +17,29 @@ define require_executable
 	fi
 endef
 
-.PHONY: help bootstrap doctor reset fix verify check audit smoke
+.PHONY: help start bootstrap doctor reset fix verify check audit smoke
 
 help:
 	@echo "Targets:"
-	@echo "  bootstrap     One-shot onboarding setup"
-	@echo "  doctor        Diagnose local setup"
-	@echo "  reset         Recreate local env from scratch"
-	@echo "  fix           Auto-fix and format"
-	@echo "  verify        Read-only checks"
-	@echo "  check         Full gate (fix+verify)"
-	@echo "  audit         Dependency scan"
+	@echo "  start         Run onboarding shortcut (bootstrap + doctor)"
+	@echo "  bootstrap     Run first-time setup"
+	@echo "  doctor        Check local environment"
+	@echo "  fix           Auto-fix and format code"
+	@echo "  verify        Run read-only checks"
+	@echo "  check         Run fix, then verify"
+	@echo "  audit         Scan dependencies for CVEs"
+	@echo "  reset         Recreate virtual environment"
 	@echo "  smoke         Run setup smoke tests"
 
+start:
+	@$(MAKE) bootstrap
+	@$(MAKE) doctor
+
 bootstrap:
-	bash $(SETUP_SCRIPT) setup --strict
+	$(SETUP) setup --strict
 
 doctor:
-	bash $(SETUP_SCRIPT) doctor --strict
+	$(SETUP) doctor --strict
 
 reset:
 	rm -rf .venv .mypy_cache .pytest_cache .ruff_cache
@@ -45,7 +51,7 @@ fix:
 	$(RUFF) format --no-cache .
 
 verify:
-	bash $(SETUP_SCRIPT) verify --strict
+	$(SETUP) verify --strict
 
 check:
 	@$(MAKE) fix

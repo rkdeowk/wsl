@@ -1,24 +1,44 @@
-# WSL Python Workspace
+# Ubuntu Dev Container Python Workspace
 
 CI 없이 로컬에서 품질 게이트를 실행하는 Python 개발 워크스페이스입니다.
+공식 실행 방식은 `Ubuntu 호스트 + Dev Container`입니다.
 
-## 사전 준비
+## 초보자 5분 시작
 
-- VS Code + Dev Containers 확장
-- Docker Desktop(또는 호환 컨테이너 런타임)
-- 저장소를 Dev Container로 열기
-
-## 처음 시작
+1. Docker Engine이 동작하는지 확인
 
 ```bash
-make bootstrap
-make doctor
+docker version
 ```
 
-- `make bootstrap`: 의존성 설치(`requirements.txt`), git hook 설치, 기본 검증까지 한 번에 수행합니다.
-- `make doctor`: 필수 파일, `.venv`, 필수 개발 도구(pre-commit/ruff/mypy/pytest/pip-audit), git hook 상태를 진단합니다.
+2. 저장소를 VS Code에서 열고 컨테이너로 재진입
 
-## 일상 작업 루틴
+```bash
+code .
+# Command Palette -> Dev Containers: Reopen in Container
+```
+
+3. 컨테이너 터미널에서 아래 한 명령 실행
+
+```bash
+make start
+```
+
+이 단계가 통과하면 기본 준비가 끝납니다.
+
+## 실행 치트시트
+
+- `make start`: 온보딩 바로 실행(`bootstrap` + `doctor`)
+- `make bootstrap`: 처음 설정/재설치
+- `make doctor`: 환경 진단
+- `make fix`: 자동 수정 + 포맷
+- `make verify`: 읽기 전용 검사(ruff/mypy/pytest)
+- `make check`: `fix` + `verify`
+- `make audit`: 의존성 취약점 점검
+- `make reset`: 가상환경 캐시 삭제 후 재설치
+- `make smoke`: setup/doctor/verify 통합 스모크
+
+일상 루틴:
 
 ```bash
 make fix
@@ -28,11 +48,9 @@ git commit -m "your message"
 git push
 ```
 
-- `make fix`: `ruff check --fix` + `ruff format`
-- `make verify`: 읽기 전용 검사(ruff/mypy/pytest)
-- `git push` 시 pre-push hook에서 `make verify`가 다시 실행됩니다.
-
 ## 문제 해결
+
+가장 먼저 아래 순서로 실행합니다.
 
 ```bash
 make doctor
@@ -40,25 +58,30 @@ make reset
 make doctor
 ```
 
-- `make reset`: `.venv`, `.mypy_cache`, `.pytest_cache`, `.ruff_cache`를 삭제 후 `make bootstrap`을 다시 실행합니다.
+`make start`를 다시 실행해도 동일한 진단 흐름을 한 번에 수행할 수 있습니다.
 
-## 자주 쓰는 명령
+## 고급/예외 실행
 
-- `make bootstrap`: 온보딩/재설치
-- `make doctor`: 환경 진단
-- `make reset`: 환경 초기화 + 재설치
-- `make fix`: 자동 수정 + 포맷
-- `make verify`: 읽기 전용 검사
-- `make check`: `fix` + `verify`
-- `make audit`: `pip-audit` 취약점 점검
-- `make smoke`: setup/doctor/verify 통합 스모크 + 핵심 회귀 시나리오 검사
+기본 정책은 Dev Container 내부 실행입니다.
+예외적으로 호스트 실행이 필요하면 `ALLOW_HOST_RUN=1`로 우회할 수 있습니다.
 
-## setup 스크립트 직접 실행
+```bash
+ALLOW_HOST_RUN=1 bash .devcontainer/setup.sh doctor --strict
+```
+
+setup 스크립트 직접 실행:
 
 ```bash
 bash .devcontainer/setup.sh setup --strict
 bash .devcontainer/setup.sh doctor --strict
 bash .devcontainer/setup.sh verify --strict
+```
+
+온보딩을 분리 실행하고 싶다면 아래 두 명령을 순서대로 사용하세요.
+
+```bash
+make bootstrap
+make doctor
 ```
 
 지원 옵션:
@@ -68,7 +91,15 @@ bash .devcontainer/setup.sh verify --strict
 - `--autoupdate-hooks`: pre-commit autoupdate 실행
 - `--editable`: `pip install -e .` 추가 실행
 
-## 훅 정책
+## 유지보수 시작점
 
-- `pre-commit`: 파일/포맷 검사
-- `pre-push`: `make verify` 실행
+어디를 수정해야 할지 빠르게 찾으려면 `docs/MAINTENANCE.md`를 먼저 확인하세요.
+
+## WSL2 부록 (선택)
+
+Windows 환경이면 아래를 추가로 준비합니다.
+
+1. PowerShell(관리자)에서 `wsl --install -d Ubuntu` 실행
+2. 이미 설치되어 있으면 `wsl --update` 실행
+3. Docker Desktop에서 WSL2 엔진/통합 활성화
+4. WSL 터미널에서 `code .` 후 Dev Container로 재진입

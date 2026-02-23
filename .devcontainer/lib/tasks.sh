@@ -35,15 +35,19 @@ task_doctor() {
 task_verify() {
   check_required_files
   require_existing_venv
+  SETUP_STRICT=1
   run_readonly_checks
 }
 
 dispatch_mode() {
   local mode="$1"
+
+  enforce_runtime_policy
+
   case "${mode}" in
     setup) task_setup ;;
     doctor) task_doctor ;;
     verify) task_verify ;;
-    *) die "Unknown mode: ${mode}" ;;
+    *) die "Unknown mode: ${mode}. Try: bash ${ENTRY_SCRIPT_REL} --help" ;;
   esac
 }
