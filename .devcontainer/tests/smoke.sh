@@ -7,11 +7,11 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # shellcheck source=/dev/null
 source "${REPO_ROOT}/.devcontainer/lib/config.sh"
 
-log() {
+smoke_log() {
   printf '[SMOKE] %s\n' "$*"
 }
 
-die() {
+smoke_die() {
   printf '[SMOKE][ERROR] %s\n' "$*" >&2
   exit 1
 }
@@ -30,6 +30,16 @@ copy_fixture() {
   done
 }
 
+prepare_case_dir() {
+  local root="$1"
+  local name="$2"
+  local case_dir="${root}/${name}"
+
+  mkdir -p "${case_dir}"
+  copy_fixture "${case_dir}"
+  printf '%s\n' "${case_dir}"
+}
+
 load_setup_libs() {
   # shellcheck source=/dev/null
   source .devcontainer/lib/core.sh
@@ -38,11 +48,10 @@ load_setup_libs() {
 }
 
 run_integration_smoke() {
-  local case_dir="$1/integration"
-  mkdir -p "${case_dir}"
-  copy_fixture "${case_dir}"
+  local case_dir
+  case_dir="$(prepare_case_dir "$1" "integration")"
 
-  log "Running integration smoke in isolated fixture"
+  smoke_log "Running integration smoke in isolated fixture"
   (
     cd "${case_dir}"
     git init -q
@@ -53,26 +62,24 @@ run_integration_smoke() {
 }
 
 test_broken_venv_recovery() {
-  local case_dir="$1/broken-venv"
-  mkdir -p "${case_dir}"
-  copy_fixture "${case_dir}"
+  local case_dir
+  case_dir="$(prepare_case_dir "$1" "broken-venv")"
   mkdir -p "${case_dir}/.venv"
 
-  log "Testing recovery from incomplete .venv"
+  smoke_log "Testing recovery from incomplete .venv"
   (
     cd "${case_dir}"
     load_setup_libs
     activate_or_create_venv
-    [ -x ".venv/bin/python" ] || die "Expected .venv/bin/python to exist after recovery."
+    [ -x ".venv/bin/python" ] || smoke_die "Expected .venv/bin/python to exist after recovery."
   )
 }
 
 test_core_hooks_path_guard() {
-  local case_dir="$1/hooks-path"
-  mkdir -p "${case_dir}"
-  copy_fixture "${case_dir}"
+  local case_dir
+  case_dir="$(prepare_case_dir "$1" "hooks-path")"
 
-  log "Testing core.hooksPath guard"
+  smoke_log "Testing core.hooksPath guard"
   (
     cd "${case_dir}"
     git init -q
@@ -81,17 +88,16 @@ test_core_hooks_path_guard() {
     load_setup_libs
 
     if verify_git_hooks_installed; then
-      die "Expected verify_git_hooks_installed to fail when core.hooksPath is set."
+      smoke_die "Expected verify_git_hooks_installed to fail when core.hooksPath is set."
     fi
   )
 }
 
 test_runtime_policy_enforcement() {
-  local case_dir="$1/runtime-policy"
-  mkdir -p "${case_dir}"
-  copy_fixture "${case_dir}"
+  local case_dir
+  case_dir="$(prepare_case_dir "$1" "runtime-policy")"
 
-  log "Testing runtime policy enforcement"
+  smoke_log "Testing runtime policy enforcement"
   (
     cd "${case_dir}"
     load_setup_libs
@@ -100,22 +106,21 @@ test_runtime_policy_enforcement() {
 
     ALLOW_HOST_RUN=0
     if ( enforce_runtime_policy ); then
-      die "Expected enforce_runtime_policy to fail when ALLOW_HOST_RUN=0 outside container."
+      smoke_die "Expected enforce_runtime_policy to fail when ALLOW_HOST_RUN=0 outside container."
     fi
 
     ALLOW_HOST_RUN=1
     if ! ( enforce_runtime_policy ); then
-      die "Expected enforce_runtime_policy to pass when ALLOW_HOST_RUN=1."
+      smoke_die "Expected enforce_runtime_policy to pass when ALLOW_HOST_RUN=1."
     fi
   )
 }
 
 test_pip_install_uses_venv_python() {
-  local case_dir="$1/pip-install-python"
-  mkdir -p "${case_dir}"
-  copy_fixture "${case_dir}"
+  local case_dir
+  case_dir="$(prepare_case_dir "$1" "pip-install-python")"
 
-  log "Testing pip_install uses fixture venv python"
+  smoke_log "Testing pip_install uses fixture venv python"
   (
     cd "${case_dir}"
     load_setup_libs
@@ -128,21 +133,21 @@ test_pip_install_uses_venv_python() {
         set -x
         pip_install --help >/dev/null
       ) 2>&1
-    )" || die "pip_install --help failed."
+    )" || smoke_die "pip_install --help failed."
 
     case "${trace_output}" in
       *"${case_dir}/.venv/bin/python"*|*".venv/bin/python -m pip install"*) ;;
       *)
-        die "Expected pip_install to use ${case_dir}/.venv/bin/python but got: ${trace_output}"
+        smoke_die "Expected pip_install to use ${case_dir}/.venv/bin/python but got: ${trace_output}"
         ;;
     esac
   )
 }
 
 main() {
-  temp_dir=""
+  local temp_dir
   temp_dir="$(mktemp -d)"
-  trap 'rm -rf "${temp_dir}"' EXIT
+  trap 'rm -rf -- '"'"${temp_dir}"'"'' EXIT
 
   run_integration_smoke "${temp_dir}"
   test_broken_venv_recovery "${temp_dir}"
@@ -150,7 +155,7 @@ main() {
   test_runtime_policy_enforcement "${temp_dir}"
   test_pip_install_uses_venv_python "${temp_dir}"
 
-  log "Smoke tests passed."
+  smoke_log "Smoke tests passed."
 }
 
 main "$@"

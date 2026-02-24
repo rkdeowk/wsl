@@ -55,13 +55,9 @@ git_hooks_dir() {
   git rev-parse --git-path hooks
 }
 
-git_core_hooks_path() {
-  git config --get core.hooksPath 2>/dev/null || true
-}
-
 verify_supported_git_hooks_config() {
   local hooks_path
-  hooks_path="$(git_core_hooks_path)"
+  hooks_path="$(git config --get core.hooksPath 2>/dev/null || true)"
 
   if [ -n "${hooks_path}" ]; then
     log ERROR "Unsupported git config: core.hooksPath='${hooks_path}'."
@@ -112,14 +108,6 @@ venv_executable_path() {
   printf '%s/bin/%s' "${VENV_DIR}" "${executable}"
 }
 
-has_venv_executable() {
-  [ -x "$(venv_executable_path "$1")" ]
-}
-
-current_python_cmd() {
-  printf '%s' "${PYTHON_CMD:-python}"
-}
-
 require_host_tools() {
   if command -v python >/dev/null 2>&1; then
     PYTHON_CMD="python"
@@ -144,7 +132,7 @@ source_venv() {
 
 activate_or_create_venv() {
   local python_cmd
-  python_cmd="$(current_python_cmd)"
+  python_cmd="${PYTHON_CMD:-python}"
 
   if [ -d "${VENV_DIR}" ] && [ ! -x "${VENV_DIR}/bin/python" ]; then
     log WARNING "${VENV_DIR} exists but is incomplete. Recreating it."
@@ -194,7 +182,7 @@ verify_required_dev_tools() {
   local missing=0
 
   for tool in "${REQUIRED_DEV_TOOLS[@]}"; do
-    if has_venv_executable "${tool}"; then
+    if [ -x "$(venv_executable_path "${tool}")" ]; then
       if is_on "${show_ok}"; then
         log INFO "[OK] ${tool}"
       fi

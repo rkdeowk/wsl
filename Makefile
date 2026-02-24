@@ -1,14 +1,15 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-SETUP_SCRIPT := .devcontainer/setup.sh
-SMOKE_SCRIPT := .devcontainer/tests/smoke.sh
 VENV_BIN := .venv/bin
 PYTHON := $(VENV_BIN)/python
 PIP_AUDIT := $(VENV_BIN)/pip-audit
-SETUP := bash $(SETUP_SCRIPT)
-
 RUFF := $(PYTHON) -m ruff
+RESET_PATHS := .venv .mypy_cache .pytest_cache .ruff_cache
+
+define run_setup_mode
+bash .devcontainer/setup.sh $(1) --strict
+endef
 
 define require_executable
 	@if [ ! -x "$(1)" ]; then \
@@ -36,13 +37,13 @@ start:
 	@$(MAKE) doctor
 
 bootstrap:
-	$(SETUP) setup --strict
+	$(call run_setup_mode,setup)
 
 doctor:
-	$(SETUP) doctor --strict
+	$(call run_setup_mode,doctor)
 
 reset:
-	rm -rf .venv .mypy_cache .pytest_cache .ruff_cache
+	rm -rf $(RESET_PATHS)
 	@$(MAKE) bootstrap
 
 fix:
@@ -51,7 +52,7 @@ fix:
 	$(RUFF) format --no-cache .
 
 verify:
-	$(SETUP) verify --strict
+	$(call run_setup_mode,verify)
 
 check:
 	@$(MAKE) fix
@@ -63,4 +64,4 @@ audit:
 	$(PIP_AUDIT)
 
 smoke:
-	bash $(SMOKE_SCRIPT)
+	bash .devcontainer/tests/smoke.sh
